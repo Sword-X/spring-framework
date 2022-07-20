@@ -94,10 +94,19 @@ public abstract class FactoryBeanRegistrySupport extends DefaultSingletonBeanReg
 	 * @see org.springframework.beans.factory.FactoryBean#getObject()
 	 */
 	protected Object getObjectFromFactoryBean(FactoryBean<?> factory, String beanName, boolean shouldPostProcess) {
+		// 单例模式执行
 		if (factory.isSingleton() && containsSingleton(beanName)) {
 			synchronized (getSingletonMutex()) {
+				// 单例对象缓存，FactoryBean name对应Object
 				Object object = this.factoryBeanObjectCache.get(beanName);
 				if (object == null) {
+					// 调用getObject()
+					// 普通Bean A<->B与工厂Bean：工厂beanA getObject()创建A，方法中创建B,B创建过程先加入三缓中，再填充属性发现依赖A
+					//	再创建A,走到此处再执行以上创建B步骤，缓存中直接返回B,填充到A中，getObject返回A，第一次alreadyThere为空，后面会将A放
+					//	  入到factoryBeanObjectCache，返回到创建B时发现依赖A，再次走到此处，alreadyThere有值
+					// 总结：走了两次，第一次创建1A走到此，依赖B-->创建1B,加入缓存,填充属性时再次创建2A走到此,依赖B-->创建2B,缓存中取出1B
+					// 	放到2A中，2A走完加入缓存，返回到1B继续填充属性，走完回到1A此处，alreadyThere已有值2A。1A=2A,1B=2B
+					// 参照实例：com.test.factoryBeanAndBean.FactoryBeanA
 					object = doGetObjectFromFactoryBean(factory, beanName);
 					// Only post-process and store if not put there already during getObject() call above
 					// (e.g. because of circular reference processing triggered by custom getBean calls)
@@ -131,6 +140,7 @@ public abstract class FactoryBeanRegistrySupport extends DefaultSingletonBeanReg
 				return object;
 			}
 		}
+		// 非单例执行
 		else {
 			Object object = doGetObjectFromFactoryBean(factory, beanName);
 			if (shouldPostProcess) {
